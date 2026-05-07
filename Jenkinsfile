@@ -2,8 +2,8 @@ pipeline {
     agent any
 
     environment {
-        APP_REPO       = 'https://github.com/<your-username>/rga-app.git'
-        TERRAFORM_REPO = 'https://github.com/<your-username>/rga-terraform.git'
+        APP_REPO       = 'https://github.com/jeevakalaiselvam/rga-app.git'
+        TERRAFORM_REPO = 'https://github.com/jeevakalaiselvam/rga-terraform.git'
         DEPLOYED_AT    = sh(script: 'date "+%Y-%m-%d %H:%M:%S"', returnStdout: true).trim()
     }
 
