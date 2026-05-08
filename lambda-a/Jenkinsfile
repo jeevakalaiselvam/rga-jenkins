@@ -61,7 +61,7 @@ pipeline {
                         credentialsId: 'aws-creds'
                     ]]) {
                         sh """
-                            terraform init \
+                            terraform init -reconfigure \
                               -backend-config="key=${env.LAMBDA_NAME}/${params.ENV}/${params.REGION}/terraform.tfstate"
                         """
                     }
