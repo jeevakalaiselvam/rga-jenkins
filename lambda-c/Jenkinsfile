@@ -32,7 +32,7 @@ pipeline {
         stage('Checkout: Lambda Source') {
             steps {
                 dir('lambdas-monorepo') {
-                    git url: 'https://github.com/your-org/lambdas-monorepo.git',
+                    git url: 'https://github.com/jeevakalaiselvam/rga-app.git',
                         branch: 'main',
                         credentialsId: 'github-creds'
                 }
@@ -43,7 +43,7 @@ pipeline {
         stage('Checkout: Terraform') {
             steps {
                 dir('terraform-monorepo') {
-                    git url: 'https://github.com/your-org/terraform-monorepo.git',
+                    git url: 'https://github.com/jeevakalaiselvam/rga-terraform.git',
                         branch: 'main',
                         credentialsId: 'github-creds'
                 }
