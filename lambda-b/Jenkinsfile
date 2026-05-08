@@ -1,0 +1,134 @@
+pipeline {
+    agent any
+
+    // ── Who this pipeline is for ─────────────────────────────────────────────
+    environment {
+        LAMBDA_NAME = 'lambda-b'   // only line that changes across lambda-b, lambda-c
+    }
+
+    // ── Parameters shown in Jenkins UI when you click "Build with Parameters" ─
+    parameters {
+        choice(
+            name: 'ENV',
+            choices: ['sit', 'qa', 'uat', 'prod'],
+            description: 'Target environment'
+        )
+        choice(
+            name: 'REGION',
+            choices: [
+                'ap-south-1',       // Mumbai
+                'us-east-1',        // N. Virginia
+                'eu-west-1',        // Ireland
+                'ap-southeast-1',   // Singapore
+                'eu-central-1'      // Frankfurt
+            ],
+            description: 'Target AWS region (office)'
+        )
+    }
+
+    stages {
+
+        // ── Step 1: Pull Lambda source code ──────────────────────────────────
+        stage('Checkout: Lambda Source') {
+            steps {
+                dir('lambdas-monorepo') {
+                    git url: 'https://github.com/your-org/lambdas-monorepo.git',
+                        branch: 'main',
+                        credentialsId: 'github-creds'
+                }
+            }
+        }
+
+        // ── Step 2: Pull Terraform infra code ────────────────────────────────
+        stage('Checkout: Terraform') {
+            steps {
+                dir('terraform-monorepo') {
+                    git url: 'https://github.com/your-org/terraform-monorepo.git',
+                        branch: 'main',
+                        credentialsId: 'github-creds'
+                }
+            }
+        }
+
+        // ── Step 3: terraform init ────────────────────────────────────────────
+        // Downloads AWS provider plugin
+        // Points to the right state file for this lambda/env/region combo
+        stage('Terraform Init') {
+            steps {
+                dir("terraform-monorepo/${env.LAMBDA_NAME}") {
+                    withCredentials([[
+                        $class: 'AmazonWebServicesCredentialsBinding',
+                        credentialsId: 'aws-creds'
+                    ]]) {
+                        sh """
+                            terraform init \
+                              -backend-config="key=${env.LAMBDA_NAME}/${params.ENV}/${params.REGION}/terraform.tfstate"
+                        """
+                    }
+                }
+            }
+        }
+
+        // ── Step 4: terraform plan (dry run, shows what will change) ──────────
+        stage('Terraform Plan') {
+            steps {
+                dir("terraform-monorepo/${env.LAMBDA_NAME}") {
+                    withCredentials([[
+                        $class: 'AmazonWebServicesCredentialsBinding',
+                        credentialsId: 'aws-creds'
+                    ]]) {
+                        sh """
+                            terraform plan \
+                              -var-file="envs/${params.ENV}.tfvars" \
+                              -var="region=${params.REGION}" \
+                              -var="lambda_src_path=../../lambdas-monorepo/${env.LAMBDA_NAME}/src"
+                        """
+                    }
+                }
+            }
+        }
+
+        // ── Step 5: manual gate for prod only ────────────────────────────────
+        // sit/qa/uat deploy automatically
+        // prod pauses and waits for a human to click Approve
+        stage('Approval Gate') {
+            when {
+                expression { params.ENV == 'prod' }
+            }
+            steps {
+                input(
+                    message: "Deploy ${env.LAMBDA_NAME} to PROD in ${params.REGION}?",
+                    ok: 'Approve & Deploy'
+                )
+            }
+        }
+
+        // ── Step 6: terraform apply (actually creates/updates Lambda in AWS) ──
+        stage('Terraform Apply') {
+            steps {
+                dir("terraform-monorepo/${env.LAMBDA_NAME}") {
+                    withCredentials([[
+                        $class: 'AmazonWebServicesCredentialsBinding',
+                        credentialsId: 'aws-creds'
+                    ]]) {
+                        sh """
+                            terraform apply -auto-approve \
+                              -var-file="envs/${params.ENV}.tfvars" \
+                              -var="region=${params.REGION}" \
+                              -var="lambda_src_path=../../lambdas-monorepo/${env.LAMBDA_NAME}/src"
+                        """
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "✅ ${env.LAMBDA_NAME} deployed → env=${params.ENV} region=${params.REGION}"
+        }
+        failure {
+            echo "❌ Deployment failed → env=${params.ENV} region=${params.REGION}"
+        }
+    }
+}
